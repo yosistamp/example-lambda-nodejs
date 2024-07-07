@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: User CRUD Application
+
+Resources:
+  UserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./app
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Architectures:
+        - x86_64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /user
+            Method: ANY
+        ApiEventWithId:
+          Type: HttpApi
+          Properties:
+            Path: /user/{id}
+            Method: ANY
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+
+  UsersTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: id
+        Type: Number
+      TableName: Users
+
+Outputs:
+  UserApi:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  UserFunction:
+    Description: "User Lambda Function ARN"
+    Value: !GetAtt UserFunction.Arn

@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: User CRUD Application
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  LambdaSubnet1:
+    Type: AWS::EC2::Subnet::Id
+  LambdaSubnet2:
+    Type: AWS::EC2::Subnet::Id
+  DBProxyEndpoint:
+    Type: String
+  DBSecretArn:
+    Type: String
+  DBName:
+    Type: String
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+
+Resources:
+  UserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs20.x
+      CodeUri: ./src
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref LambdaSubnet1
+          - !Ref LambdaSubnet2
+      Events:
+        UserAPI:
+          Type: HttpApi
+          Properties:
+            Path: /user
+            Method: ANY
+      Environment:
+        Variables:
+          DB_PROXY_ENDPOINT: !Ref DBProxyEndpoint
+          DB_SECRET_ARN: !Ref DBSecretArn
+          DB_NAME: !Ref DBName
+      Policies:
+        - VPCAccessPolicy: {}
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: !Ref DBSecretArn
+
+  UserApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: Prod
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        AllowHeaders:
+          - Content-Type
+        AllowOrigins:
+          - '*'
+
+Outputs:
+  UserApiEndpoint:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${UserApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"

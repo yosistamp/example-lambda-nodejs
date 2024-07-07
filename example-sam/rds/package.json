@@ -1,0 +1,24 @@
+{
+  "name": "rds",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "package": "sam package --template-file template.yaml --output-template-file packaged.yaml --s3-bucket your-s3-bucket",
+    "deploy": "sam deploy --template-file packaged.yaml --stack-name user-crud-stack --capabilities CAPABILITY_IAM"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.140",
+    "@types/node": "^20.14.9",
+    "typescript": "^5.5.3"
+  },
+  "dependencies": {
+    "@aws-lambda-powertools/logger": "^2.3.0",
+    "@aws-lambda-powertools/parser": "^2.3.0-beta",
+    "@aws-sdk/client-rds-data": "^3.609.0"
+  }
+}

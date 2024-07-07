@@ -1,0 +1,11 @@
+version = 0.1
+[default.deploy.parameters]
+stack_name = "sam-app"
+resolve_s3 = true
+s3_prefix = "sam-app"
+region = "ap-northeast-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+disable_rollback = true
+parameter_overrides = "VpcId=\"vpc-0bb6744d200b4a34c\" LambdaSubnet1=\"subnet-01f9596f3fef53e86\" LambdaSubnet2=\"subnet-0b6341c3d38c8e314\" DBProxyEndpoint=\"example-proxy.proxy-c28uub7r2j68.ap-northeast-1.rds.amazonaws.com\" DBSecretArn=\"arn:aws:secretsmanager:ap-northeast-1:165985788939:secret:db-credentials-default-ilQm0L\" DBName=\"example\" LambdaSecurityGroup=\"sg-08a73e2478b28579a\""
+image_repositories = []
