@@ -19,12 +19,17 @@ Parameters:
     Type: AWS::EC2::SecurityGroup::Id
 
 Resources:
+  UserApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: default
+
   UserFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: index.handler
       Runtime: nodejs20.x
-      CodeUri: ./src
+      CodeUri: app/
       VpcConfig:
         SecurityGroupIds:
           - !Ref LambdaSecurityGroup
@@ -33,10 +38,19 @@ Resources:
           - !Ref LambdaSubnet2
       Events:
         UserAPI:
-          Type: HttpApi
+          Type: Api
           Properties:
             Path: /user
             Method: ANY
+            RestApiId:
+              Ref: UserApi
+        InitializeAPI:
+          Type: Api
+          Properties:
+            Path: /initialize
+            Method: POST
+            RestApiId:
+              Ref: UserApi
       Environment:
         Variables:
           DB_PROXY_ENDPOINT: !Ref DBProxyEndpoint
@@ -46,21 +60,21 @@ Resources:
         - VPCAccessPolicy: {}
         - AWSSecretsManagerGetSecretValuePolicy:
             SecretArn: !Ref DBSecretArn
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Format: esm
+        Minify: false
+        OutExtension:
+          - .js=.mjs
+        Target: "es2020"
+        Sourcemap: false
+        EntryPoints: 
+          - index.ts
+        Banner:
+          - js=import { createRequire } from 'module';const require = createRequire(import.meta.url);
 
-  UserApi:
-    Type: AWS::Serverless::HttpApi
-    Properties:
-      StageName: Prod
-      CorsConfiguration:
-        AllowMethods:
-          - GET
-          - POST
-          - PUT
-          - DELETE
-        AllowHeaders:
-          - Content-Type
-        AllowOrigins:
-          - '*'
+
 
 Outputs:
   UserApiEndpoint:

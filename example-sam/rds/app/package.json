@@ -19,6 +19,7 @@
   "dependencies": {
     "@aws-lambda-powertools/logger": "^2.3.0",
     "@aws-lambda-powertools/parser": "^2.3.0-beta",
-    "@aws-sdk/client-rds-data": "^3.609.0"
+    "@aws-sdk/client-rds-data": "^3.609.0",
+    "zod": "^3.23.8"
   }
 }

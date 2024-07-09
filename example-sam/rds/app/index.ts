@@ -1,17 +1,21 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { RDSDataClient, ExecuteStatementCommand } from '@aws-sdk/client-rds-data';
 import { Logger } from '@aws-lambda-powertools/logger';
-import { Parser } from '@aws-lambda-powertools/parser';
+import { parser } from '@aws-lambda-powertools/parser/middleware';
+import { z } from 'zod';
+
 
 const logger = new Logger();
-const parser = new Parser();
 
 const rdsClient = new RDSDataClient({});
 
-interface User {
-  id: number;
-  name: string;
-}
+const UserSchema = z.object({
+  id: z.number(),
+  name: z.string()
+});
+
+
+type User = z.infer<typeof UserSchema>;
 
 const validateUser = (user: User): boolean => {
   if (typeof user.id !== 'number') return false;
@@ -21,7 +25,7 @@ const validateUser = (user: User): boolean => {
 
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   logger.info('Received request', { request: event });
-
+  console.log('Received request', { request: event });
   const { httpMethod, path, body } = event;
 
   try {
