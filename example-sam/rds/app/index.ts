@@ -1,116 +1,178 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { RDSDataClient, ExecuteStatementCommand } from '@aws-sdk/client-rds-data';
-import { Logger } from '@aws-lambda-powertools/logger';
-import { parser } from '@aws-lambda-powertools/parser/middleware';
-import { z } from 'zod';
+import { RDSClient, DescribeDBProxiesCommand } from '@aws-sdk/client-rds';
+import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
+import { parser } from '@aws-lambda-powertools/parser';
+import { Logger  } from '@aws-lambda-powertools/logger';
+import middy from '@middy/core';
 
+import { Client } from 'pg';
+import { z } from 'zod';
 
 const logger = new Logger();
 
-const rdsClient = new RDSDataClient({});
+const region = 'ap-northeast-1';
+const secretName = process.env.RDS_SECRET_NAME;
+const rdsProxyEndpoint = process.env.RDS_PROXY_ENDPOINT;
+
+const secretsClient = new SecretsManagerClient({ region });
+
+interface DatabaseSecret {
+  username: string;
+  password: string;
+}
 
 const UserSchema = z.object({
   id: z.number(),
   name: z.string()
 });
 
-
 type User = z.infer<typeof UserSchema>;
 
-const validateUser = (user: User): boolean => {
-  if (typeof user.id !== 'number') return false;
-  if (typeof user.name !== 'string' || user.name.length > 20) return false;
-  return true;
-};
+const getSecrets = async () => {
+  // Secrets Managerからシークレットを取得
+  const getSecretCommand = new GetSecretValueCommand({ SecretId: secretName });
+  const secretResponse = await secretsClient.send(getSecretCommand);
+  if (!secretResponse.SecretString) {
+    throw new Error('Secret not found');
+  }
+  const dbSecret: DatabaseSecret = JSON.parse(secretResponse.SecretString);
+  return dbSecret;
+}
 
-export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  logger.info('Received request', { request: event });
-  console.log('Received request', { request: event });
+const getClinent = async (dbSecret: DatabaseSecret) => {
+  return new Client({
+    host: rdsProxyEndpoint,
+    port: 5432,
+    database: process.env.DB_NAME,
+    user: dbSecret.username,
+    password: dbSecret.password,
+    ssl: {
+      rejectUnauthorized: false, // 本番環境では適切に設定してください
+    },
+  });
+}
+
+const lambdaHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  logger.info('Received request3', { request: event });
+  console.log('Received request2', { request: event });
   const { httpMethod, path, body } = event;
 
   try {
+    const dbSecret = await getSecrets();
+    console.log('Secret: ' + dbSecret.username);
+
     switch (httpMethod) {
       case 'GET':
         if (path === '/user') {
-          const result = await rdsClient.send(new ExecuteStatementCommand({
-            resourceArn: process.env.DB_CLUSTER_ARN,
-            secretArn: process.env.DB_SECRET_ARN,
-            database: process.env.DB_NAME,
-            sql: 'SELECT * FROM users'
-          }));
-          return { statusCode: 200, body: JSON.stringify(result.records) };
+          return await findUser();
         } else {
           const userId = path.split('/')[2];
-          const result = await rdsClient.send(new ExecuteStatementCommand({
-            resourceArn: process.env.DB_CLUSTER_ARN,
-            secretArn: process.env.DB_SECRET_ARN,
-            database: process.env.DB_NAME,
-            sql: 'SELECT * FROM users WHERE id = :id',
-            parameters: [{ name: 'id', value: { longValue: parseInt(userId) } }]
-          }));
-          return { statusCode: 200, body: JSON.stringify(result.records[0]) };
+          return await getUser(userId);
         }
-
       case 'POST':
         if (path === "/initialize") {
-          await rdsClient.send(new ExecuteStatementCommand({
-            resourceArn: process.env.DB_CLUSTER_ARN,
-            secretArn: process.env.DB_SECRET_ARN,
-            database: process.env.DB_NAME,
-            sql: 'CREATE TABLE IF NOT EXISTS users (id INT PRIMARY KEY, name VARCHAR(20))'
-          }));
-          return { statusCode: 200, body: JSON.stringify({ message: 'Table created successfully' }) };
+          try {
+            return await createTable();
+          } catch(error) {
+            console.log(error);
+            return { statusCode: 500, body: JSON.stringify({ message: 'Error creating table' }) };
+          }
         }
-        const newUser = parser.parseEventBody<User>(event);
-        if (!validateUser(newUser)) {
-          return { statusCode: 400, body: JSON.stringify({ message: 'Invalid user data' }) };
-        }
-        await rdsClient.send(new ExecuteStatementCommand({
-          resourceArn: process.env.DB_CLUSTER_ARN,
-          secretArn: process.env.DB_SECRET_ARN,
-          database: process.env.DB_NAME,
-          sql: 'INSERT INTO users (id, name) VALUES (:id, :name)',
-          parameters: [
-            { name: 'id', value: { longValue: newUser.id } },
-            { name: 'name', value: { stringValue: newUser.name } }
-          ]
-        }));
-        return { statusCode: 201, body: JSON.stringify({ message: 'User created successfully' }) };
-
+        return await insertUser(body);
       case 'PUT':
         const userId = path.split('/')[2];
-        const updatedUser = parser.parseEventBody<User>(event);
-        if (!validateUser(updatedUser)) {
-          return { statusCode: 400, body: JSON.stringify({ message: 'Invalid user data' }) };
-        }
-        await rdsClient.send(new ExecuteStatementCommand({
-          resourceArn: process.env.DB_CLUSTER_ARN,
-          secretArn: process.env.DB_SECRET_ARN,
-          database: process.env.DB_NAME,
-          sql: 'UPDATE users SET name = :name WHERE id = :id',
-          parameters: [
-            { name: 'id', value: { longValue: parseInt(userId) } },
-            { name: 'name', value: { stringValue: updatedUser.name } }
-          ]
-        }));
-        return { statusCode: 200, body: JSON.stringify({ message: 'User updated successfully' }) };
-
+        return await updateUser(body, userId);
       case 'DELETE':
         const deleteUserId = path.split('/')[2];
-        await rdsClient.send(new ExecuteStatementCommand({
-          resourceArn: process.env.DB_CLUSTER_ARN,
-          secretArn: process.env.DB_SECRET_ARN,
-          database: process.env.DB_NAME,
-          sql: 'DELETE FROM users WHERE id = :id',
-          parameters: [{ name: 'id', value: { longValue: parseInt(deleteUserId) } }]
-        }));
-        return { statusCode: 200, body: JSON.stringify({ message: 'User deleted successfully' }) };
-
+        return await deleteUser(deleteUserId);
       default:
         return { statusCode: 405, body: JSON.stringify({ message: 'Method not allowed' }) };
     }
   } catch (error) {
     logger.error('Error processing request', { error });
+    if (error instanceof z.ZodError) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: 'Invalid input',
+          errors: error.errors,
+        }),
+      };
+    }
     return { statusCode: 500, body: JSON.stringify({ message: 'Internal server error' }) };
   }
 };
+
+// CreateTable
+const createTable = async () => {
+  const client = await getClinent(await getSecrets());
+  await client.connect()
+  const createTableResult = await client.query(
+    'CREATE TABLE IF NOT EXISTS users (id INT PRIMARY KEY, name VARCHAR(20))'
+  );
+  console.log('CreateTable result:', createTableResult.rowCount);
+  return { statusCode: 200, body: JSON.stringify({ message: 'Table created successfully' }) };
+}
+
+const findUser = async() => {
+  const client = await getClinent(await getSecrets());
+  await client.connect()
+  const res = await client.query('SELECT * FROM users');
+  return { statusCode: 200, body: JSON.stringify(res.rows) };
+}
+
+const getUser = async(userId: string) => {
+  const client = await getClinent(await getSecrets());
+  await client.connect()
+  const res = await client.query('SELECT * FROM users WHERE id = $1', [userId]);
+  return res.rows[0];
+}
+
+const insertUser = async (body: string|null) => {
+  // 入力チェック
+  if (!body) {
+    throw new Error('Request body is missing');
+  }
+  const validatedUser = UserSchema.parse(JSON.parse(body));
+  logger.info('Validated user data', { user: validatedUser });
+
+  // Insert
+  const client = await getClinent(await getSecrets());
+  await client.connect()
+  const insertResult = await client.query(
+    'INSERT INTO users (id, name) VALUES ($1, $2) RETURNING id', [validatedUser.id, validatedUser.name]
+  );
+  console.log('Insert result:', insertResult.rows[0].id);
+  return { statusCode: 201, body: JSON.stringify({ message: 'User created successfully' }) };
+}
+
+const updateUser = async (body: string|null, userId: string) => {
+  if (!body) {
+    throw new Error('Request body is missing');
+  }
+  let user = JSON.parse(body);
+  user.id = userId;
+  const validatedUser = UserSchema.parse(user);
+  logger.info('Validated user data', { user: validatedUser });
+
+  // update
+  const client = await getClinent(await getSecrets());
+  await client.connect()
+  const updateResult = await client.query(
+    'UPDATE users SET name = $1 WHERE id = $2 RETURNING  *', [validatedUser.name, validatedUser.id]
+  );
+  console.log('Update result:', updateResult.rows[0]);
+  return { statusCode: 200, body: JSON.stringify({ message: 'User updated successfully' }) };
+}
+
+const deleteUser = async (userId: string) => {
+  const client = await getClinent(await getSecrets());
+  await client.connect()
+  const deleteResult = await client.query(
+    'DELETE FROM users WHERE id = $1 RETURNING id', [userId]
+  );
+  console.log('Delete result:', deleteResult.rows[0].id);
+  return { statusCode: 200, body: JSON.stringify({ message: 'User deleted successfully' }) };
+}
+
+export const handler = middy(lambdaHandler)

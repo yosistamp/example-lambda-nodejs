@@ -9,7 +9,11 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
   LambdaSubnet2:
     Type: AWS::EC2::Subnet::Id
-  DBProxyEndpoint:
+  RDSProxyName:
+    Type: String
+  RDSProxyEndpoint:
+    Type: String
+  RDSSecretName:
     Type: String
   DBSecretArn:
     Type: String
@@ -53,10 +57,16 @@ Resources:
               Ref: UserApi
       Environment:
         Variables:
-          DB_PROXY_ENDPOINT: !Ref DBProxyEndpoint
-          DB_SECRET_ARN: !Ref DBSecretArn
+          RDS_PROXY_NAME: !Ref RDSProxyName
+          RDS_PROXY_ENDPOINT: !Ref RDSProxyEndpoint
+          RDS_SECRET_NAME: !Ref RDSSecretName
           DB_NAME: !Ref DBName
       Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - rds:DescribeDBProxies
+            Resource: '*'
         - VPCAccessPolicy: {}
         - AWSSecretsManagerGetSecretValuePolicy:
             SecretArn: !Ref DBSecretArn
@@ -68,7 +78,7 @@ Resources:
         OutExtension:
           - .js=.mjs
         Target: "es2020"
-        Sourcemap: false
+        Sourcemap: true
         EntryPoints: 
           - index.ts
         Banner:
