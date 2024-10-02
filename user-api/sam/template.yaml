@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless User API
+
+Resources:
+  UserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageUri: <アカウントID>.dkr.ecr.ap-northeast-1.amazonaws.com/user-api:v0.0.11 # FIXME
+      VpcConfig:
+        SubnetIds:
+          - subnet-xxxxxxxxxxxxxxxxx # FIXME
+          - subnet-xxxxxxxxxxxxxxxxx # FIXME
+        SecurityGroupIds:
+          - sg-xxxxxxxxxxxxxxxxx # FIXME
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserTable
+
+  UserTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: UserTable
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  ALBListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: arn:aws:elasticloadbalancing:ap-northeast-1:<アカウントID>:listener/app/example-alb/345f62f694973311/993403bfe18ae05e # FIXME
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /users
+            - /users/*
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref LambdaTargetGroup
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt UserFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: elasticloadbalancing.amazonaws.com
+      SourceArn: !Sub arn:aws:elasticloadbalancing:ap-northeast-1:<アカウントID>:targetgroup/LambdaTargetGroup/* # FIXME
+
+  LambdaTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: LambdaTargetGroup
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt UserFunction.Arn
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /users
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 5
+      UnhealthyThresholdCount: 2
