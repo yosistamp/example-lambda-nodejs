@@ -9,6 +9,10 @@ import httpErrorHandler from "@middy/http-error-handler";
 import { createUser, getUser, updateUser, deleteUser } from "./dynamo";
 import { User } from "./types";
 import { userSchema, userEventSchema } from "./schemas";
+import { Tracer } from '@aws-lambda-powertools/tracer';
+import { captureLambdaHandler } from '@aws-lambda-powertools/tracer/middleware';
+
+const tracer = new Tracer({ serviceName: 'serverlessAirline' });
 
 const logger = new Logger();
 
@@ -95,5 +99,6 @@ const conditionalParser = () => {
 export const handler = middy(lambdaHandler)
 //  .use(httpJsonBodyParser())
 //  .use(httpEventNormalizer())
+  .use(captureLambdaHandler(tracer))
   .use(conditionalParser())
   .use(httpErrorHandler());
